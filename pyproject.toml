@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "survey-alerts"
+version = "0.1.0"
+description = "Alert-report delivery engine for earthwatch-suite: turns survey-monitor alert events (alerts.jsonl) into human-readable HTML/PDF site reports and email digests"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "crieck2010" }]
+keywords = ["surveying", "remote-sensing", "satellite", "monitoring", "alerts", "reports", "email"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+# The engine core is stdlib-only on purpose: HTML reports, MIME email
+# composition, and SMTP delivery all use the standard library. reportlab is
+# an optional, lazily-imported upgrade path for native PDF rendering.
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["reportlab>=4"]
+dev = ["build", "twine", "pytest"]
+
+[project.scripts]
+survey-alerts = "alerts.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/crieck2010/survey-alerts"
+Repository = "https://github.com/crieck2010/survey-alerts"
+Issues = "https://github.com/crieck2010/survey-alerts/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
