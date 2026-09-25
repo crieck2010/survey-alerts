@@ -464,6 +464,28 @@ def test_cli_send_dry_run(capsys):
     assert "dry run" in err and "ops@example.com" in err
 
 
+def test_cli_digest_multi_site_file_is_idempotent(tmp_path):
+    # one file carrying two sites' records: each site must be marked under
+    # its own site_id, or the second site gets re-delivered on re-run
+    sites = tmp_path / "sites"
+    (sites / "mixed").mkdir(parents=True)
+    records, _ = read_all()
+    with open(sites / "mixed" / "alerts.jsonl", "w") as fh:
+        for r in dedupe(records):
+            fh.write(json.dumps(r.to_dict()) + "\n")
+    state = str(tmp_path / "state.json")
+    out_dir = str(tmp_path / "reports")
+    assert _run_cli("digest", "--sites-dir", str(sites), "--state", state,
+                    "--out-dir", out_dir) == 0
+    assert len(os.listdir(out_dir)) == 4  # 2 sites x (html + txt)
+    n_before = len(os.listdir(out_dir))
+    assert _run_cli("digest", "--sites-dir", str(sites), "--state", state,
+                    "--out-dir", out_dir) == 0
+    assert len(os.listdir(out_dir)) == n_before  # nothing re-delivered
+    saved = json.load(open(state))
+    assert set(saved["delivered"]) == {"quarry-north", "wetland-east"}
+
+
 def test_cli_digest_end_to_end(tmp_path):
     sites = tmp_path / "sites"
     (sites / "quarry-north").mkdir(parents=True)

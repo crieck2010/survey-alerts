@@ -26,7 +26,7 @@ import sys
 from typing import List, Optional
 
 from . import html as _html
-from .digest import DigestState, select_new
+from .digest import DigestState, select_new, split_by_site
 from .emailer import LoggingNotifier, SmtpConfig, compose_email, send_email
 from .errors import AlertsError
 from .model import build_report
@@ -119,43 +119,44 @@ def cmd_digest(a: argparse.Namespace) -> int:
     state = DigestState.load(a.state)
     now = _utcnow()
     delivered_any = 0
-    per_site = []
-    for site_id, path in _site_alert_files(a.sites_dir):
+    sites_hit = 0
+    for _dir_site, path in _site_alert_files(a.sites_dir):
         records = _read(path, a.min_severity, a.since)
         new = select_new(records, state, min_severity=a.min_severity,
                          since=a.since)
-        if not new:
-            continue
-        report = build_report(new, generated_at=now)
-        per_site.append((site_id, report))
-        if a.email_to:
-            config = SmtpConfig.from_env(
-                host=a.smtp_host, port=a.smtp_port, user=a.smtp_user,
-                password=a.smtp_password, from_addr=a.from_,
-                use_tls=(not a.no_tls))
-            recipients = [r.strip() for r in a.email_to.split(",")
-                          if r.strip()]
-            msg = compose_email(report, recipients, config.from_addr or
-                                os.environ.get("SURVEY_ALERTS_SMTP_FROM", ""))
-            if a.dry_run:
-                print(f"dry run: would email site {site_id} "
-                      f"({report.total()} alerts) to "
-                      f"{', '.join(recipients)}", file=sys.stderr)
-            else:
-                send_email(msg, config)
-                print(f"emailed site {site_id} ({report.total()} alerts)",
-                      file=sys.stderr)
-        if a.out_dir:
-            notifier = LoggingNotifier(out_dir=a.out_dir)
-            path_written = notifier(report)
-            print(f"wrote {path_written}", file=sys.stderr)
-        if not a.dry_run:
-            state.mark_delivered(site_id, new, now)
-        delivered_any += report.total()
+        # a file may carry several sites' records: report and mark each
+        # site under its own site_id so re-delivery can never happen
+        for site_id, group in split_by_site(new):
+            report = build_report(group, generated_at=now)
+            sites_hit += 1
+            if a.email_to:
+                config = SmtpConfig.from_env(
+                    host=a.smtp_host, port=a.smtp_port, user=a.smtp_user,
+                    password=a.smtp_password, from_addr=a.from_,
+                    use_tls=(not a.no_tls))
+                recipients = [r.strip() for r in a.email_to.split(",")
+                              if r.strip()]
+                msg = compose_email(report, recipients, config.from_addr or
+                                    os.environ.get("SURVEY_ALERTS_SMTP_FROM", ""))
+                if a.dry_run:
+                    print(f"dry run: would email site {site_id} "
+                          f"({report.total()} alerts) to "
+                          f"{', '.join(recipients)}", file=sys.stderr)
+                else:
+                    send_email(msg, config)
+                    print(f"emailed site {site_id} ({report.total()} alerts)",
+                          file=sys.stderr)
+            if a.out_dir:
+                notifier = LoggingNotifier(out_dir=a.out_dir)
+                path_written = notifier(report)
+                print(f"wrote {path_written}", file=sys.stderr)
+            if not a.dry_run:
+                state.mark_delivered(site_id, group, now)
+            delivered_any += report.total()
     if not a.dry_run:
         state.save()
     print(f"digest complete: {delivered_any} new alert(s) across "
-          f"{len(per_site)} site(s); state -> {a.state}", file=sys.stderr)
+          f"{sites_hit} site(s); state -> {a.state}", file=sys.stderr)
     return 0
 
 
